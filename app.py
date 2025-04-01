@@ -1,68 +1,80 @@
 import streamlit as st
-import openai
+import requests
+import base64
+from io import BytesIO
 import os
-import requests
-from dotenv import load_dotenv
+from gtts import gTTS
 from PIL import Image
+import random
 
-# Load environment variables
-load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")  # OpenAI API Key for images
-ai_studios_api_key = os.getenv("AI_STUDIOS_API_KEY")  # AI Studios API Key for text
+# AI Studios API Configuration
+AI_STUDIOS_API_KEY = "YOUR_AISTUDIOS_API_KEY"
+TEXT_GEN_URL = "https://api.aistudios.com/text-generation"
+TTS_URL = "https://api.aistudios.com/text-to-speech"
+IMAGE_GEN_URL = "https://api.aistudios.com/image-generation"
 
-import requests
-
-def generate_story(prompt, theme, age_group, length):
-    api_url = "YOUR_API_ENDPOINT"  # Replace with the correct API URL
-    payload = {"prompt": prompt, "theme": theme, "age_group": age_group, "length": length}
+# Function to generate story
+def generate_story(title, theme, age_group, num_lines):
+    prompt = f"Write a {num_lines}-line story titled '{title}' with the theme '{theme}' for a {age_group} audience."
+    payload = {"prompt": prompt, "max_tokens": 200}
+    headers = {"Authorization": f"Bearer {AI_STUDIOS_API_KEY}"}
+    response = requests.post(TEXT_GEN_URL, json=payload, headers=headers)
     
-    response = requests.post(api_url, json=payload)
+    if response.status_code == 200:
+        return response.json().get("text", "Story generation failed.")
+    return "Error generating story."
+
+# Function to convert text to speech
+def text_to_speech(story_text):
+    tts = gTTS(text=story_text, lang="en")
+    audio_path = "story.mp3"
+    tts.save(audio_path)
+    return audio_path
+
+# Function to generate related image
+def generate_image(title, theme):
+    payload = {"prompt": f"An illustration for a {theme} story titled '{title}'."}
+    headers = {"Authorization": f"Bearer {AI_STUDIOS_API_KEY}"}
+    response = requests.post(IMAGE_GEN_URL, json=payload, headers=headers)
     
-    # Debugging: Print raw response
-    print("Response Status Code:", response.status_code)
-    print("Response Content:", response.text)  # Print raw response text
+    if response.status_code == 200:
+        image_data = base64.b64decode(response.json()["image_base64"])
+        img = Image.open(BytesIO(image_data))
+        img_path = "story_image.png"
+        img.save(img_path)
+        return img_path
+    return None
 
-    try:
-        return response.json().get("story", "Story generation failed.")
-    except requests.exceptions.JSONDecodeError:
-        return "Error: Invalid JSON response from API."
-
-
-def generate_image(prompt):
-    """Generate an image based on the story prompt using OpenAI's DALL-E."""
-    response = openai.Image.create(
-        prompt=prompt,
-        n=1,
-        size="512x512"
-    )
-    image_url = response["data"][0]["url"]
-    return image_url
+# Function to get background music
+def get_background_music(theme):
+    theme_music = {
+        "Adventure": "adventure_music.mp3",
+        "Fantasy": "fantasy_music.mp3",
+        "Horror": "horror_music.mp3",
+        "Sci-Fi": "sci_fi_music.mp3",
+        "Kids": "kids_music.mp3"
+    }
+    return theme_music.get(theme, "default_music.mp3")
 
 # Streamlit UI
 st.title("AI Storyteller")
-st.write("Enter a prompt, choose a theme, and let AI create a story for you!")
 
-prompt = st.text_area("Enter your story prompt:")
-theme = st.selectbox("Select a story theme:", ["Fantasy", "Romantic", "Horror", "Funny", "Adventure"])
-age_group = st.selectbox("Select the target age group:", ["Children", "Teenagers", "Adults"])
-length = st.selectbox("Select the length of the story:", ["Short", "Medium", "Long"])
+title = st.text_input("Enter Story Title", "The Magic Forest")
+theme = st.selectbox("Select Theme", ["Adventure", "Fantasy", "Horror", "Sci-Fi", "Kids"])
+age_group = st.selectbox("Select Age Group", ["Kids", "Teenagers", "Adults"])
+num_lines = st.slider("Number of Lines", min_value=5, max_value=50, value=10)
 
-if st.button("Generate Story and Image"):
-    if prompt:
-        story = generate_story(prompt, theme, age_group, length)
-        st.subheader("Your Story:")
-        st.write(story)
-        
-        # Generate and display image
-        st.subheader("Story Illustration:")
-        image_url = generate_image(f"{theme} story illustration of {prompt}")
-        st.image(image_url, caption="Generated Story Image")
-    else:
-        st.warning("Please enter a prompt.")
+if st.button("Generate Story"):
+    story = generate_story(title, theme, age_group, num_lines)
+    st.write("### Generated Story")
+    st.write(story)
 
-# Instructions for VS Code:
-# 1. Install dependencies: pip install streamlit openai python-dotenv pillow requests
-# 2. Create a .env file and add:
-#    OPENAI_API_KEY=your_openai_api_key_here
-#    AI_STUDIOS_API_KEY=your_ai_stustorydios_api_key_here
-# 3. Run the app using: streamlit run app.py
+    audio_file = text_to_speech(story)
+    image_file = generate_image(title, theme)
+    music_file = get_background_music(theme)
+
+    if image_file:
+        st.image(image_file, caption="Story Illustration")
+
+    st.audio(audio_file, format="audio/mp3")
+    st.audio(music_file, format="audio/mp3", autoplay=True)
